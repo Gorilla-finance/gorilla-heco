@@ -1,23 +1,20 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.5.16;
+pragma solidity 0.5.16;
 
-import "./libs/@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "./libs/@openzeppelin/contracts/token/ERC20/ERC20Detailed.sol";
-import "./libs/@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./libs/@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
-import "./libs/@openzeppelin/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/ERC20.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/ERC20Detailed.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/SafeERC20.sol";// SPDX-License-Identifier: MIT
 
-contract MonkeyToken is ERC20, ERC20Detailed {
+contract MockHUSDToken is ERC20, ERC20Detailed {
     using SafeERC20 for IERC20;
     using Address for address;
-    using SafeMath for uint256;
+    using SafeMath for uint;
 
     address public governance;
-    mapping(address => bool) public minters;
+    mapping (address => bool) public minters;
 
-    constructor() public ERC20Detailed("MonkeyToken", "MKY", 18) {
+    constructor () public ERC20Detailed("rHUSD", "rHUSD", 8) {
         governance = tx.origin;
     }
 

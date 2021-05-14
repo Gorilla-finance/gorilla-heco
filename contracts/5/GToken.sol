@@ -2,25 +2,20 @@
 
 pragma solidity ^0.5.16;
 
-import "./libs/@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
-import "./libs/@openzeppelin/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/ERC20.sol";
+import "openzeppelin-solidity-2.3.0/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/ERC20Detailed.sol";
 import "./libs/SafeToken.sol";
 
-contract GToken is ERC20, Ownable {
+contract GToken is ERC20, ERC20Detailed, Ownable {
     using SafeToken for address;
     using SafeMath for uint256;
-
-    string public name = "";
-    string public symbol = "";
-    uint8 public decimals = 18;
 
     event Mint(address sender, address account, uint256 amount);
     event Burn(address sender, address account, uint256 amount);
 
-    constructor(string memory _symbol) public {
-        name = _symbol;
-        symbol = _symbol;
+    constructor(string memory _symbol, uint8 _decimals) public ERC20Detailed(_symbol, _symbol, _decimals)  {
     }
 
     function mint(address account, uint256 amount) public onlyOwner {

@@ -2,11 +2,11 @@
 
 pragma solidity ^0.5.16;
 
-import "./libs/@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
-import "./libs/@openzeppelin/contracts/math/SafeMath.sol";
-import "./libs/@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./libs/@openzeppelin/contracts/math/Math.sol";
+import "openzeppelin-solidity-2.3.0/contracts/utils/ReentrancyGuard.sol";
+import "openzeppelin-solidity-2.3.0/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/IERC20.sol";
+import "openzeppelin-solidity-2.3.0/contracts/math/Math.sol";
 import "./interfaces/IBankConfig.sol";
 import "./interfaces/InterestModel.sol";
 import "./interfaces/IGoblin.sol";
@@ -21,9 +21,9 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
     event Liquidate(uint256 indexed id, address indexed killer, uint256 prize, uint256 left);
 
     struct TokenBank {
-        address tokenAddr; //  原来的token合约地址，比如ht
-        address pTokenAddr; //  各种ptoken合约地址，比如pht
-        bool isOpen; //  默认为0，表示不存在
+        address tokenAddr;
+        address wrapperTokenAddr;
+        bool isOpen;
         bool canDeposit;
         bool canWithdraw;
         uint256 totalVal;
@@ -61,6 +61,7 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
 
     mapping(uint256 => Position) public positions;
     uint256 public currentPos = 1;
+    uint constant private BPS = 10000;
 
     // Require that the caller must be an EOA account to avoid flash loans.
     modifier onlyEOA() {
@@ -72,23 +73,23 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
 
     /// read
     function positionInfo(uint256 posId)
-        public
-        view
-        returns (
-            uint256,
-            uint256,
-            uint256,
-            address
-        )
+    public
+    view
+    returns (
+        uint256,
+        uint256,
+        uint256,
+        address
+    )
     {
         Position storage pos = positions[posId];
         Production storage prod = productions[pos.productionId];
 
         return (
-            pos.productionId,
-            IGoblin(prod.goblin).health(posId, prod.borrowToken),
-            debtShareToVal(prod.borrowToken, pos.debtShare),
-            pos.owner
+        pos.productionId,
+        IGoblin(prod.goblin).health(posId, prod.borrowToken),
+        debtShareToVal(prod.borrowToken, pos.debtShare),
+        pos.owner
         );
     }
 
@@ -98,7 +99,6 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
 
         uint256 balance = token == address(0) ? address(this).balance : SafeToken.myBalance(token);
         balance = bank.totalVal < balance ? bank.totalVal : balance;
-
         return balance.add(bank.totalDebt).sub(bank.totalReserve);
     }
 
@@ -114,8 +114,12 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
         TokenBank storage bank = banks[token];
         require(bank.isOpen, "token not exists");
 
-        if (bank.totalDebt == 0) return debtVal;
-        return debtVal.mul(bank.totalDebtShare).div(bank.totalDebt);
+        if (bank.totalDebt == 0) {
+            return debtVal;
+        }
+        else {
+            return debtVal.mul(bank.totalDebtShare).div(bank.totalDebt);
+        }
     }
 
     /// write
@@ -127,7 +131,6 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
         calInterest(token);
 
         if (token == address(0)) {
-            //TODO: 直接打HT，看看banks什么时候设置的address(0)
             amount = msg.value;
         } else {
             SafeToken.safeTransferFrom(token, msg.sender, address(this), amount);
@@ -135,22 +138,22 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
 
         bank.totalVal = bank.totalVal.add(amount);
         uint256 total = totalToken(token).sub(amount);
-        uint256 pTotal = GToken(bank.pTokenAddr).totalSupply();
+        uint256 wrapperTotal = GToken(bank.wrapperTokenAddr).totalSupply();
 
-        uint256 pAmount = (total == 0 || pTotal == 0) ? amount : amount.mul(pTotal).div(total);
-        GToken(bank.pTokenAddr).mint(msg.sender, pAmount);
+        uint256 wrapperAmount = (total == 0 || wrapperTotal == 0) ? amount : amount.mul(wrapperTotal).div(total);
+        GToken(bank.wrapperTokenAddr).mint(msg.sender, wrapperAmount);
     }
 
-    function withdraw(address token, uint256 pAmount) external nonReentrant {
+    function withdraw(address token, uint256 wrapperTokenAmount) external nonReentrant {
         TokenBank storage bank = banks[token];
         require(bank.isOpen && bank.canWithdraw, "Token not exist or cannot withdraw");
 
         calInterest(token);
 
-        uint256 amount = pAmount.mul(totalToken(token)).div(GToken(bank.pTokenAddr).totalSupply());
+        uint256 amount = wrapperTokenAmount.mul(totalToken(token)).div(GToken(bank.wrapperTokenAddr).totalSupply());
         bank.totalVal = bank.totalVal.sub(amount);
 
-        GToken(bank.pTokenAddr).burn(msg.sender, pAmount);
+        GToken(bank.wrapperTokenAddr).burn(msg.sender, wrapperTokenAmount);
 
         if (token == address(0)) {
             //HT
@@ -180,7 +183,7 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
 
         Production storage production = productions[pid];
         require(production.isOpen, "Production not exists");
-
+        require(config.isGoblin(production.goblin), "not a goblin");
         require(borrow == 0 || production.canBorrow, "Production can not borrow");
         calInterest(production.borrowToken);
 
@@ -205,13 +208,12 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
             beforeToken = beforeToken.sub(borrow);
             SafeToken.safeApprove(production.borrowToken, production.goblin, borrow);
         }
-
         IGoblin(production.goblin).work.value(sendHT)(posId, msg.sender, production.borrowToken, borrow, debt, data);
 
         uint256 backToken =
-            isBorrowHt
-                ? (address(this).balance.sub(beforeToken))
-                : SafeToken.myBalance(production.borrowToken).sub(beforeToken);
+        isBorrowHt
+        ? (address(this).balance.sub(beforeToken))
+        : SafeToken.myBalance(production.borrowToken).sub(beforeToken);
 
         if (backToken > debt) {
             //没有借款, 有剩余退款
@@ -219,13 +221,12 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
             debt = 0;
 
             isBorrowHt
-                ? SafeToken.safeTransferETH(msg.sender, backToken)
-                : SafeToken.safeTransfer(production.borrowToken, msg.sender, backToken);
+            ? SafeToken.safeTransferETH(msg.sender, backToken)
+            : SafeToken.safeTransfer(production.borrowToken, msg.sender, backToken);
         } else if (debt > backToken) {
             //有借款
             debt = debt.sub(backToken);
             backToken = 0;
-
             require(debt >= production.minDebt, "too small debt size");
             uint256 health = IGoblin(production.goblin).health(posId, production.borrowToken);
             require(health.mul(production.openFactor) >= debt.mul(10000), "bad work factor");
@@ -241,9 +242,8 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
         Production storage production = productions[pos.productionId];
 
         uint256 debt = _removeDebt(pos, production);
-
         uint256 health = IGoblin(production.goblin).health(posId, production.borrowToken);
-        require(health.mul(production.liquidateFactor) < debt.mul(10000), "can't liquidate");
+        require(health.mul(production.liquidateFactor) < debt.mul(BPS), "can't liquidate");
 
         bool isHT = production.borrowToken == address(0);
         uint256 before = isHT ? address(this).balance : SafeToken.myBalance(production.borrowToken);
@@ -253,20 +253,20 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
         uint256 back = isHT ? address(this).balance : SafeToken.myBalance(production.borrowToken);
         back = back.sub(before);
 
-        uint256 prize = back.mul(config.getLiquidateBps()).div(10000);
+        uint256 prize = back.mul(config.getLiquidateBps()).div(BPS);
         uint256 rest = back.sub(prize);
         uint256 left = 0;
 
         if (prize > 0) {
             isHT
-                ? SafeToken.safeTransferETH(msg.sender, prize)
-                : SafeToken.safeTransfer(production.borrowToken, msg.sender, prize);
+            ? SafeToken.safeTransferETH(msg.sender, prize)
+            : SafeToken.safeTransfer(production.borrowToken, msg.sender, prize);
         }
         if (rest > debt) {
             left = rest.sub(debt);
             isHT
-                ? SafeToken.safeTransferETH(pos.owner, left)
-                : SafeToken.safeTransfer(production.borrowToken, pos.owner, left);
+            ? SafeToken.safeTransferETH(pos.owner, left)
+            : SafeToken.safeTransfer(production.borrowToken, pos.owner, left);
         } else {
             banks[production.borrowToken].totalVal = banks[production.borrowToken].totalVal.sub(debt).add(rest);
         }
@@ -313,14 +313,14 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
         config = _config;
     }
 
-    function addToken(address token, string calldata _symbol) external onlyOwner {
+    function addToken(address token, string calldata _symbol, uint8 _decimals) external onlyOwner {
         TokenBank storage bank = banks[token];
         require(!bank.isOpen, "token already exists");
 
         bank.isOpen = true;
-        address pToken = genPToken(_symbol);
+        address wrapperToken = genWrapperToken(_symbol, _decimals);
         bank.tokenAddr = token;
-        bank.pTokenAddr = pToken;
+        bank.wrapperTokenAddr = wrapperToken;
         bank.canDeposit = true;
         bank.canWithdraw = true;
         bank.totalVal = 0;
@@ -387,7 +387,9 @@ contract Bank is GTokenFactory, Ownable, ReentrancyGuard {
             uint256 ratePerSec = config.getInterestRate(totalDebt, totalBalance);
             uint256 interest = ratePerSec.mul(timePast).mul(totalDebt).div(1e18);
 
-            uint256 toReserve = interest.mul(config.getReserveBps()).div(10000);
+
+            uint256 toReserve = interest.mul(config.getReserveBps()).div(BPS);
+
             bank.totalReserve = bank.totalReserve.add(toReserve);
             bank.totalDebt = bank.totalDebt.add(interest);
             bank.lastInterestTime = now;

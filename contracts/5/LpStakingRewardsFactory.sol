@@ -2,7 +2,7 @@
 
 pragma solidity ^0.5.16;
 
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/ownership/Ownable.sol";
 import "./LpStakingRewards.sol";
 
 contract LpStakingRewardsFactory is Ownable {
@@ -21,43 +21,48 @@ contract LpStakingRewardsFactory is Ownable {
     // rewards info by staking token
     mapping(address => LpStakingRewardsInfo) public lpStakingRewardsInfoByStakingToken;
 
+    /// gor平台币
     constructor(address _rewardsToken) public Ownable() {
         rewardsToken = _rewardsToken;
     }
 
-    ///// permissioned functions
-    // deploy a staking reward contract for the staking token, and store the total reward amount
-    // hecoPoolId: set -1 if not stake lpToken to Heco
     function createStakingReward(
         address operator,
-        address stakingToken,
+        address stakingToken, // mdxpair
         uint256 rewardAmount,
-        address pool,
-        int256 poolId,
-        address earnToken,
         uint256 startTime
+    ) public onlyOwner {
+        createStakingReward1(operator, stakingToken, rewardAmount, startTime, 7 days, 12, 70);
+    }
+
+    function createStakingReward1(
+        address operator,
+        address stakingToken, // mdxpair
+        uint256 rewardAmount,
+        uint256 startTime,
+        uint256 rewardsDuration,
+        uint256 leftRewardTimes,
+        uint256 nextPercent
     ) public onlyOwner {
         LpStakingRewardsInfo storage info = lpStakingRewardsInfoByStakingToken[stakingToken];
         require(info.lpStakingRewards == address(0), "LpStakingRewardsFactory::deploy: already deployed");
         info.lpStakingRewards = address(
             new LpStakingRewards(
-                /*_rewardsDistribution=*/
-                address(this),
+                address(this), /*_rewardsDistribution=*/
                 operator,
                 rewardsToken,
-                stakingToken,
                 rewardAmount,
-                pool,
-                poolId,
-                earnToken,
-                startTime
+                startTime,
+                rewardsDuration,
+                leftRewardTimes,
+                nextPercent
             )
         );
         stakingTokens.push(stakingToken);
     }
 
     // notify initial reward amount for an individual staking token.
-    function notifyRewardAmount(address stakingToken, uint256 rewardAmount) public onlyOwner {
+    function notifyRewardAmount(address stakingToken, uint256 rewardAmount) external onlyOwner {
         require(rewardAmount > 0, "amount should > 0");
         LpStakingRewardsInfo storage info = lpStakingRewardsInfoByStakingToken[stakingToken];
         require(info.lpStakingRewards != address(0), "LpStakingRewardsFactory::notifyRewardAmount: not deployed");
@@ -67,31 +72,13 @@ contract LpStakingRewardsFactory is Ownable {
         }
     }
 
-    function setOperator(address stakingToken, address operator) public onlyOwner {
+    function setOperator(address stakingToken, address operator) external onlyOwner {
         LpStakingRewardsInfo storage info = lpStakingRewardsInfoByStakingToken[stakingToken];
         require(info.lpStakingRewards != address(0), "LpStakingRewardsFactory::setOperator: not deployed");
         LpStakingRewards(info.lpStakingRewards).setOperator(operator);
     }
 
-    function setPool(address stakingToken, address pool) public onlyOwner {
-        LpStakingRewardsInfo storage info = lpStakingRewardsInfoByStakingToken[stakingToken];
-        require(info.lpStakingRewards != address(0), "LpStakingRewardsFactory::setOperator: not deployed");
-        LpStakingRewards(info.lpStakingRewards).setPool(pool);
-    }
-
-    function setPoolId(address stakingToken, int256 poolId) public onlyOwner {
-        LpStakingRewardsInfo storage info = lpStakingRewardsInfoByStakingToken[stakingToken];
-        require(info.lpStakingRewards != address(0), "LpStakingRewardsFactory::setOperator: not deployed");
-        LpStakingRewards(info.lpStakingRewards).setPoolId(poolId);
-    }
-
-    function claim(address stakingToken, address to) public onlyOwner {
-        LpStakingRewardsInfo storage info = lpStakingRewardsInfoByStakingToken[stakingToken];
-        require(info.lpStakingRewards != address(0), "LpStakingRewardsFactory::claim: not deployed");
-        LpStakingRewards(info.lpStakingRewards).claim(to);
-    }
-
-    function burn(address stakingToken, uint256 amount) public onlyOwner {
+    function burn(address stakingToken, uint256 amount) external onlyOwner {
         LpStakingRewardsInfo storage info = lpStakingRewardsInfoByStakingToken[stakingToken];
         require(info.lpStakingRewards != address(0), "LpStakingRewardsFactory::burn: not deployed");
         LpStakingRewards(info.lpStakingRewards).burn(amount);

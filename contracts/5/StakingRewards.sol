@@ -2,16 +2,17 @@
 
 pragma solidity ^0.5.16;
 
-import "./libs/@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./libs/@openzeppelin/contracts/token/ERC20/ERC20Detailed.sol";
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
-import "./libs/@openzeppelin/contracts/math/SafeMath.sol";
-import "./libs/@openzeppelin/contracts/math/Math.sol";
-import "./libs/@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "./libs/@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/IERC20.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/ERC20Mintable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/ERC20Burnable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/ERC20Detailed.sol";
+import "openzeppelin-solidity-2.3.0/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity-2.3.0/contracts/math/Math.sol";
+import "openzeppelin-solidity-2.3.0/contracts/token/ERC20/SafeERC20.sol";
+import "openzeppelin-solidity-2.3.0/contracts/utils/ReentrancyGuard.sol";
 
 import "./interfaces/IStakingRewards.sol";
-import "./interfaces/IHecoPool.sol";
 import "./RewardsDistributionRecipient.sol";
 
 contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, ReentrancyGuard {
@@ -32,7 +33,8 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     uint256 public rewardsPaid = 0;
     uint256 public startTime = 0;
     uint256 public rewardsed = 0;
-    uint256 private leftRewardTimes = 12;
+    uint256 public leftRewardTimes = 12;
+    uint256 public nextPercent = 70;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
@@ -47,13 +49,19 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         address _rewardsToken,
         address _stakingToken,
         uint256 _rewardAmount,
-        uint256 _startTime
+        uint256 _startTime,
+        uint256 _rewardsDuration,
+        uint256 _leftRewardTimes,
+        uint256 _nextPercent
     ) public {
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
         rewardsDistribution = _rewardsDistribution;
         totalRewards = _rewardAmount;
         startTime = _startTime;
+        rewardsDuration = _rewardsDuration;
+        leftRewardTimes = _leftRewardTimes;
+        nextPercent = _nextPercent;
     }
 
     /* ========== VIEWS ========== */
@@ -75,9 +83,9 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
             return rewardPerTokenStored;
         }
         return
-            rewardPerTokenStored.add(
-                lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRate).mul(1e18).div(_totalSupply)
-            );
+        rewardPerTokenStored.add(
+            lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRate).mul(1e18).div(_totalSupply)
+        );
     }
 
     function earned(address account) public view returns (uint256) {
@@ -119,7 +127,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     function burn(uint256 amount) external onlyRewardsDistribution {
         leftRewardTimes = 0;
         rewardsNext = 0;
-        rewardsToken.burn(address(this), amount);
+        (ERC20Burnable(address(rewardsToken))).burn(amount);
     }
 
     /* ========== RESTRICTED FUNCTIONS ========== */
@@ -133,9 +141,9 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
             uint256 leftover = remaining.mul(rewardRate);
             rewardRate = reward.add(leftover).div(rewardsDuration);
         }
-        rewardsToken.mint(address(this),reward);
+        (ERC20Mintable(address(rewardsToken))).mint(address(this), reward);
         rewardsed = reward;
-        rewardsNext = rewardsed.mul(70).div(100);
+        rewardsNext = rewardsed.mul(nextPercent).div(100);
         leftRewardTimes = leftRewardTimes.sub(1);
         lastUpdateTime = block.timestamp;
         periodFinish = block.timestamp.add(rewardsDuration);
@@ -158,18 +166,18 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         if (block.timestamp >= periodFinish && leftRewardTimes > 0) {
             leftRewardTimes = leftRewardTimes.sub(1);
             uint256 reward = leftRewardTimes == 0 ? totalRewards.sub(rewardsed) : rewardsNext;
-            rewardsToken.mint(address(this), reward);
+            (ERC20Mintable(address(rewardsToken))).mint(address(this), reward);
             rewardsed = rewardsed.add(reward);
             rewardRate = reward.div(rewardsDuration);
             periodFinish = block.timestamp.add(rewardsDuration);
-            rewardsNext = leftRewardTimes > 0 ? rewardsNext.mul(70).div(100) : 0;
+            rewardsNext = leftRewardTimes > 0 ? rewardsNext.mul(nextPercent).div(100) : 0;
             emit RewardAdded(reward);
         }
         _;
     }
 
     modifier checkStart(){
-        require(block.timestamp > startTime,"not start");
+        require(block.timestamp > startTime, "not start");
         _;
     }
 

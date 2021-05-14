@@ -2,16 +2,16 @@
 
 pragma solidity ^0.5.16;
 
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
-import "./libs/@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./libs/@openzeppelin/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity-2.3.0/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/utils/ReentrancyGuard.sol";
+import "openzeppelin-solidity-2.3.0/contracts/math/SafeMath.sol";
 import "./libs/SafeToken.sol";
 import "./interfaces/IStrategy.sol";
-import "./interfaces/IWHT.sol";
-import "./interfaces/IMdexPair.sol";
-import "./interfaces/IMdexRouter.sol";
-import "./interfaces/IMdexFactory.sol";
-import "./interfaces/ISwapMining.sol";
+import "../interfaces/IWHT.sol";
+import "../interfaces/IMdexPair.sol";
+import "../interfaces/IMdexRouter.sol";
+import "../interfaces/IMdexFactory.sol";
+import "../interfaces/ISwapMining.sol";
 
 contract MdexStrategyWithdrawMinimizeTrading is Ownable, ReentrancyGuard, IStrategy {
     using SafeToken for address;
@@ -41,6 +41,7 @@ contract MdexStrategyWithdrawMinimizeTrading is Ownable, ReentrancyGuard, IStrat
         uint256 debt,
         bytes calldata data
     ) external payable nonReentrant {
+        
         // 1. Find out lpToken and liquidity.
         // whichWantBack: 0:token0;1:token1;2:token what surplus.
         (address token0, address token1, uint256 whichWantBack) = abi.decode(data, (address, address, uint256));
@@ -68,18 +69,20 @@ contract MdexStrategyWithdrawMinimizeTrading is Ownable, ReentrancyGuard, IStrat
         );
 
         address tokenUserWant = whichWantBack == uint256(0) ? token0 : token1;
-
         IMdexPair lpToken = IMdexPair(factory.getPair(token0, token1));
         token0 = lpToken.token0();
         token1 = lpToken.token1();
 
         {
-            lpToken.approve(address(router), uint256(-1));
+            
+            
+            lpToken.approve(address(router), uint256(- 1));
             router.removeLiquidity(token0, token1, lpToken.balanceOf(address(this)), 0, 0, address(this), now);
         }
         {
             address tokenRelative = borrowToken == token0 ? token1 : token0;
 
+            
             swapIfNeed(borrowToken, tokenRelative, debt);
 
             if (isBorrowHt) {
@@ -90,14 +93,16 @@ contract MdexStrategyWithdrawMinimizeTrading is Ownable, ReentrancyGuard, IStrat
             }
         }
 
+        
+
         // 2. swap remaining token to what user want.
         if (whichWantBack != uint256(2)) {
             address tokenAnother = tokenUserWant == token0 ? token1 : token0;
             uint256 anotherAmount = tokenAnother.myBalance();
             if (anotherAmount > 0) {
                 tokenAnother.safeApprove(address(router), 0);
-                tokenAnother.safeApprove(address(router), uint256(-1));
-
+                tokenAnother.safeApprove(address(router), uint256(- 1));
+                
                 address[] memory path = new address[](2);
                 path[0] = tokenAnother;
                 path[1] = tokenUserWant;
@@ -123,14 +128,16 @@ contract MdexStrategyWithdrawMinimizeTrading is Ownable, ReentrancyGuard, IStrat
     ) internal {
         uint256 borrowTokenAmount = borrowToken.myBalance();
         if (debt > borrowTokenAmount) {
-            tokenRelative.safeApprove(address(router), 0);
-            tokenRelative.safeApprove(address(router), uint256(-1));
-
+            tokenRelative.safeApprove(address(router), uint256(- 1));
             uint256 remainingDebt = debt.sub(borrowTokenAmount);
             address[] memory path = new address[](2);
             path[0] = tokenRelative;
             path[1] = borrowToken;
+            
+            
+            
             router.swapTokensForExactTokens(remainingDebt, tokenRelative.myBalance(), path, address(this), now);
+            tokenRelative.safeApprove(address(router), 0);
         }
     }
 

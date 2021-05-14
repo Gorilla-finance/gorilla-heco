@@ -2,17 +2,17 @@
 
 pragma solidity 0.5.16;
 
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
-import "./libs/@openzeppelin/contracts/math/SafeMath.sol";
-import "./libs/@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "openzeppelin-solidity-2.3.0/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity-2.3.0/contracts/utils/ReentrancyGuard.sol";
 import "@uniswap/v2-core/contracts/libraries/Math.sol";
 import "./libs/SafeToken.sol";
 import "./interfaces/IStrategy.sol";
-import "./interfaces/IWHT.sol";
-import "./interfaces/IMdexPair.sol";
-import "./interfaces/IMdexRouter.sol";
-import "./interfaces/IMdexFactory.sol";
-import "./interfaces/ISwapMining.sol";
+import "../interfaces/IWHT.sol";
+import "../interfaces/IMdexPair.sol";
+import "../interfaces/IMdexRouter.sol";
+import "../interfaces/IMdexFactory.sol";
+import "../interfaces/ISwapMining.sol";
 
 contract MdexStrategyAddTwoSidesOptimal is Ownable, ReentrancyGuard, IStrategy {
     using SafeToken for address;
@@ -81,7 +81,7 @@ contract MdexStrategyAddTwoSidesOptimal is Ownable, ReentrancyGuard, IStrategy {
         uint256 a = 997;
         uint256 b = uint256(1997).mul(resA);
         uint256 _c = (amtA.mul(resB)).sub(amtB.mul(resA));
-        uint256 c = _c.mul(1000).div(amtB.add(resB)).mul(resA);
+        uint256 c = _c.mul(1000).mul(resA).div(amtB.add(resB));
 
         uint256 d = a.mul(c).mul(4);
         uint256 e = Math.sqrt(b.mul(b).add(d));
@@ -104,13 +104,16 @@ contract MdexStrategyAddTwoSidesOptimal is Ownable, ReentrancyGuard, IStrategy {
         uint256, /* debt */
         bytes calldata data
     ) external payable onlyGoblin nonReentrant {
+
+        
+
         address token0;
         address token1;
         uint256 minLPAmount;
         {
             // 1. decode token and amount info, and transfer to contract.
             (address _token0, address _token1, uint256 token0Amount, uint256 token1Amount, uint256 _minLPAmount) =
-                abi.decode(data, (address, address, uint256, uint256, uint256));
+            abi.decode(data, (address, address, uint256, uint256, uint256));
             token0 = _token0;
             token1 = _token1;
             minLPAmount = _minLPAmount;
@@ -156,22 +159,26 @@ contract MdexStrategyAddTwoSidesOptimal is Ownable, ReentrancyGuard, IStrategy {
             tokenRelative = borrowToken == token0 ? token1 : token0;
 
             borrowToken.safeApprove(address(router), 0);
-            borrowToken.safeApprove(address(router), uint256(-1));
+            borrowToken.safeApprove(address(router), uint256(- 1));
 
             tokenRelative.safeApprove(address(router), 0);
-            tokenRelative.safeApprove(address(router), uint256(-1));
+            tokenRelative.safeApprove(address(router), uint256(- 1));
 
             // 3. swap and mint LP tokens.
+            
             calAndSwap(lpToken, borrowToken, tokenRelative);
+            
 
             (, , uint256 moreLPAmount) =
-                router.addLiquidity(token0, token1, token0.myBalance(), token1.myBalance(), 0, 0, address(this), now);
+            router.addLiquidity(token0, token1, token0.myBalance(), token1.myBalance(), 0, 0, address(this), now);
             require(moreLPAmount >= minLPAmount, "insufficient LP tokens received");
         }
+        
 
         // 4. send lpToken and borrowToken back to the sender.
         lpToken.transfer(msg.sender, lpToken.balanceOf(address(this)));
 
+        
         if (htRelative == address(0)) {
             borrowToken.safeTransfer(msg.sender, borrowToken.myBalance());
             tokenRelative.safeTransfer(user, tokenRelative.myBalance());
@@ -200,11 +207,11 @@ contract MdexStrategyAddTwoSidesOptimal is Ownable, ReentrancyGuard, IStrategy {
         address borrowToken,
         address tokenRelative
     ) internal {
-        (uint256 token0Reserve, uint256 token1Reserve, ) = lpToken.getReserves();
+        (uint256 token0Reserve, uint256 token1Reserve,) = lpToken.getReserves();
         (uint256 debtReserve, uint256 relativeReserve) =
-            borrowToken == lpToken.token0() ? (token0Reserve, token1Reserve) : (token1Reserve, token0Reserve);
+        borrowToken == lpToken.token0() ? (token0Reserve, token1Reserve) : (token1Reserve, token0Reserve);
         (uint256 swapAmt, bool isReversed) =
-            optimalDeposit(borrowToken.myBalance(), tokenRelative.myBalance(), debtReserve, relativeReserve);
+        optimalDeposit(borrowToken.myBalance(), tokenRelative.myBalance(), debtReserve, relativeReserve);
 
         if (swapAmt > 0) {
             address[] memory path = new address[](2);

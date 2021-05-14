@@ -2,7 +2,7 @@
 
 pragma solidity 0.5.16;
 
-import "./libs/@openzeppelin/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity-2.3.0/contracts/ownership/Ownable.sol";
 import "./interfaces/IPriceOracle.sol";
 
 contract SimplePriceOracle is Ownable, IPriceOracle {
